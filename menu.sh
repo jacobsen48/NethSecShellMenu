@@ -28,33 +28,6 @@ function listDevices {
   echo "$device_names"
 }
 
-# function listInterfaces {
-#   config_file="/etc/config/network"
-#
-#   interfaces=()
-#   devices=()
-#
-#   while read -r line; do
-#     if [[ $line == config\ interface* ]]; then
-#       interface=$(echo "$line" | awk -F "'" '{print $2}')
-#       if [[ $interface != "loopback" ]]; then
-#         interfaces+=("$interface")
-#       fi
-#     elif [[ $line == option\ device* ]]; then
-#       device=$(echo "$line" | awk '{print $3}' | tr -d "'")
-#       if [[ $device != "lo" ]]; then
-#         devices+=("$device")
-#       fi
-#     fi
-#   done < "$config_file"
-#
-#   for (( i = 0; i<${#interfaces[@]}; i++ )); do
-#     echo "$((i+1)). ${interfaces[$i]} (Device: ${devices[$i]})"
-#   done
-#
-#   echo "$interfaces"
-# }
-
 function listInterfaces {
   config_file=$(cat /etc/config/network)
 
@@ -316,7 +289,7 @@ function iad {
 
       select selected_interface in "${interface_array[@]}"; do
         if [ -n "$selected_interface" ]; then
-          j='{"device_name": "'"$selected_interface"'"}'
+          j='{"iface_name": "'"$selected_interface"'"}'
           echo "$j"
           echo "$j" | python /usr/libexec/rpcd/ns.devices call unconfigure-device
           break
@@ -327,50 +300,78 @@ function iad {
     fi
   }
 
+  condition="true"
+  
+  while $condition; do
+
   echo " --- Interfaces and Devices --- "
+  echo " Remember to commit for the changes to take effect"
+  echo " 0) Back to Main Menu"
   echo " 1) Create vlan device   5) Configure device"
   echo " 2) Delete device        6) Unconfigure device"
-  echo " 3) List devices         7) Uci Commit"    
-  echo " 4) List interfaces      0) Back to Main Menu"
+  echo " 3) List devices         7) Uci Changes"    
+  echo " 4) List interfaces      8) Uci Commit"
   echo
   read -p "Choose an option: " -r response
   case $response in
     1)
       vlanCreation
+      toContinue
+      clear
       ;;
 
     2)
       deleteDevice
+      toContinue
+      clear
       ;;
 
     3)
       listDevices
+      toContinue
+      clear
       ;;
 
     4)
       listInterfaces
+      toContinue
+      clear
       ;;
 
     5)
       configureDevice
+      toContinue
+      clear
       ;;
 
     6)
       unconfigureDevice
+      toContinue
+      clear
       ;;
 
     7)
+      uci changes
+      toContinue
+      clear
+      ;;
+
+    8)
       uci commit 
+      toContinue
+      clear
       ;;
 
     0)
-      exit
+      condition="false"
       ;;
+
     *)
       echo "Invalid Option"
+      clear
       ;;
   esac
-
+done
 }
 
 function menu {
@@ -389,13 +390,13 @@ function menu {
     set -e
 
     echo
-    echo " 0) Logout                      7) Ping Host "
-    echo " 1) Interface and device        8) Shell "
-    echo " 2) Reset the root password     9) bwm-ng "
-    echo " 3) Reset to factory defaults  10) Log "
-    echo " 4) Power off system           11) Backup "
-    echo " 5) Reboot System              12) Update from console "
-    echo " 6) speedTest "
+    echo " 0) Logout "
+    echo " 1) Interface and device        7) Ping Host "
+    echo " 2) Reset the root password     8) Shell "
+    echo " 3) Reset to factory defaults   9) Bwm-ng "
+    echo " 4) Power off System           10) Log "
+    echo " 5) Reboot System              11) Backup "
+    echo " 6) SpeedTest                  12) Update from console "
     echo
     read -p "Enter an option: " -r OPCODE
     echo
@@ -407,6 +408,7 @@ function menu {
         exit
         ;;
       1)
+        clear
         iad
         toContinue
         clear
