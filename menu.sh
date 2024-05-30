@@ -5,11 +5,14 @@
 # SPDX-License-Identifier: GPL-2.0-only
 #
 
+# Function that give chance to read output of commands to the user, after given
+# ENTER input, the menu continue with commands.
 function toContinue {
   echo -e "\nPress ENTER to continue. \n"
   read -r
 }
 
+# Function that ask the user a confirm, this is to avoid a lot of redundant
 function confirm {
   while true; do
     read -p "Do you want to proceed? [y/N] " -r response
@@ -21,6 +24,7 @@ function confirm {
   done	
 }
 
+# Function that list all the devices
 function listDevices {
   data=$(/usr/libexec/rpcd/ns.devices call list-devices)
   device_names=$(echo "$data" | jq -r '.all_devices[] | select(.[".type"] == "device") | .name')
@@ -28,6 +32,33 @@ function listDevices {
   echo "$device_names"
 }
 
+# Function that listed all the devices give you the possibility of a choice
+function selectDevice {
+
+  device_names=$(listDevices)
+
+  if [ -z "$device_names" ]; then
+    echo "Devices not found."
+  else
+    device_array=()
+    for device_name in $device_names; do
+      device_array+=("$device_name")
+    done
+
+    PS3="Select device name: "
+
+    select selected_device in "${device_array[@]}"; do
+      if [ -n "$selected_device" ]; then
+        echo "$selected_device"
+        break
+      else
+        echo "Invalid selection. Try again."
+      fi
+    done
+  fi
+}
+
+# Function the list the interfaces  
 function listInterfaces {
   config_file=$(cat /etc/config/network)
 
@@ -41,6 +72,32 @@ function listInterfaces {
   echo "$interfaces"
 }
 
+#
+function selectInterface {
+  interface_names=$(listInterfaces)
+
+  if [ -z "$interface_names" ]; then
+    echo "Devices not found."
+  else
+    interface_array=()
+    for interface_name in $interface_names; do
+      interface_array+=("$interface_name")
+    done
+
+    PS3="Select interface name: "
+
+    select selected_interface in "${interface_array[@]}"; do
+      if [ -n "$selected_interface" ]; then
+        echo "$selected_interface"
+        break
+      else
+        echo "Invalid selection. Try again."
+      fi
+    done
+  fi
+}
+
+# Function that perform a backup
 function backup {
   echo "System backup will be performed"
   if confirm; then
@@ -49,6 +106,7 @@ function backup {
   fi
 }
 
+# Function that will reset the system to factory defaults
 function default {
   echo "You are about to reset the firewall to factory defaults.
   The firewall will shutdown directly after completion."
@@ -59,6 +117,7 @@ function default {
   fi
 }
 
+# Function that perform a shutdown of the system
 function poweroff {
   echo "The system will halt and poweroff."
   if confirm; then
@@ -67,7 +126,7 @@ function poweroff {
   fi
 }
 
-
+# Function that give chance to change root password
 function rootPass {
   USER_NAME=root
 
@@ -91,12 +150,14 @@ function rootPass {
   fi
 }
 
+# Function that given domain or ip, it perform a ping.
 function pingHost {
   echo "Enter a host name or IP address"
   read -r pinghost
   ping -c 3 -n "$pinghost"
 }
 
+# Function that will perform a reboot of the system
 function reboot {
   echo "The system will reboot."
   if confirm; then
@@ -105,12 +166,13 @@ function reboot {
   fi
 }
 
+# Function that perform an update of the system if necessary.
 function update {
   echo " Checking Update ... "
-  prova=$(/usr/libexec/rpcd/ns.update call check-system-update)
+  check=$(/usr/libexec/rpcd/ns.update call check-system-update)
 
-  CURRENT_VERSION=$(echo "$prova" | sed -n 's/.*"currentVersion": "\([^"]*\)".*/\1/p')
-  LAST_VERSION=$(echo "$prova" | sed -n 's/.*"lastVersion": "\([^"]*\)".*/\1/p')
+  CURRENT_VERSION=$(echo "$check" | sed -n 's/.*"currentVersion": "\([^"]*\)".*/\1/p')
+  LAST_VERSION=$(echo "$check" | sed -n 's/.*"lastVersion": "\([^"]*\)".*/\1/p')
 
   if [ -z "$LAST_VERSION" ]; then
     echo "System already up to date to the newest version"
@@ -131,6 +193,7 @@ function update {
 
 }
 
+# Function that print a banner that contain info about the producer
 function banner {
   file="/etc/os-release"
 
@@ -173,205 +236,348 @@ function banner {
   echo
 }
 
-function iad {
-
-  function vlanCreation {
-    echo
-    echo "Vlan creation"
-    echo
-
-    PS3="Seleziona vlan_type: "
-    options=("802.1q" "802.1ad")
-    select a in "${options[@]}"
-    do
-      case $a in
-        "802.1q")
-          echo "802.1q Selected"
-          break
-          ;;
-        "802.1ad")
-          echo "802.1ad Selected"
-          break
-          ;;
-        *)
-          echo "Invalid option. Try again."
-          ;;
-      esac
-    done
-
-    interface_array=()
-    for interface in /sys/class/net/*; do
-      interface_name=$(basename "$interface")
-      if [[ $interface_name != "bonding_masters" && $interface_name != "ifb-dns" && $interface_name != "lo" ]]; then
-        interface_array+=("$interface_name")
-      fi
-    done
-
-    PS3="Select base_device_name: "
-    select b in "${interface_array[@]}"
-    do
-      case $b in
-        *)
-          echo "$b Selected"
-          break
-          ;;
-      esac
-    done
-
-
-    read -p "Insert vlan_id (must be between 1 and 4096): " -r c
-    while ! [[ "$c" =~ ^[0-9]+$ ]] || (( c < 1 || c > 4096 )); do
-      echo "vlan_id not valid. Must be between 1 and 4096."
-      read -p "Insert vlan_id: " -r c
-    done
-
-    j='{"vlan_type": "'"$a"'", "base_device_name": "'"$b"'", "vlan_id": "'"$c"'"}'
-    echo "$j" | python /usr/libexec/rpcd/ns.devices call create-vlan-device
-
-    echo "$j"
-  }
-
-  function deleteDevice {
-    echo
-    echo "Delete Device"		
-    echo
-
-    device_names=$(listDevices)
-
-    if [ -z "$device_names" ]; then
-      echo "Devices not found."
-    else
-      device_array=()
-      for device_name in $device_names; do
-        device_array+=("$device_name")
-      done
-
-      PS3="Select device name: "
-
-      select selected_device in "${device_array[@]}"; do
-        if [ -n "$selected_device" ]; then
-          j='{"action": "delete-device", "device_name": "'"$selected_device"'"}'
-          echo "$j"
-          echo "$j" | python /usr/libexec/rpcd/ns.devices call delete-device
-          break
-        else
-          echo "Invalid selection. Try again."
-        fi
-      done
-    fi
-  }
-
-  function configureDevice {
-    echo
-    echo "Configure Device"
-    echo
-  }
-
-  function unconfigureDevice {
-    echo
-    echo "Unconfigure Device"		
-    echo "Here you have to chose the interfaces linked to the device"
-    echo "After all the interfaces of a certain device will be deleted"
-    echo "The Device is to consider unconfigured"
-    echo
-
-    interface_names=$(listInterfaces)
-
-    if [ -z "$interface_names" ]; then
-      echo "Devices not found."
-    else
-      interface_array=()
-      for interface_name in $interface_names; do
-        interface_array+=("$interface_name")
-      done
-
-      PS3="Select interface name: "
-
-      select selected_interface in "${interface_array[@]}"; do
-        if [ -n "$selected_interface" ]; then
-          j='{"iface_name": "'"$selected_interface"'"}'
-          echo "$j"
-          echo "$j" | python /usr/libexec/rpcd/ns.devices call unconfigure-device
-          break
-        else
-          echo "Invalid selection. Try again."
-        fi
-      done
-    fi
-  }
-
-  condition="true"
-  
-  while $condition; do
-
-  echo " --- Interfaces and Devices --- "
-  echo " Remember to commit for the changes to take effect"
-  echo " 0) Back to Main Menu"
-  echo " 1) Create vlan device   5) Configure device"
-  echo " 2) Delete device        6) Unconfigure device"
-  echo " 3) List devices         7) Uci Changes"    
-  echo " 4) List interfaces      8) Uci Commit"
+# Function that create a vlan
+function vlanCreation {
   echo
-  read -p "Choose an option: " -r response
-  case $response in
+  echo "Vlan creation"
+  echo
+
+  PS3="Seleziona vlan_type: "
+  options=("802.1q" "802.1ad")
+  select a in "${options[@]}"
+  do
+    case $a in
+      "802.1q")
+        echo "802.1q Selected"
+        break
+        ;;
+      "802.1ad")
+        echo "802.1ad Selected"
+        break
+        ;;
+      *)
+        echo "Invalid option. Try again."
+        ;;
+    esac
+  done
+
+  interface_array=()
+  for interface in /sys/class/net/*; do
+    interface_name=$(basename "$interface")
+    if [[ $interface_name != "bonding_masters" && $interface_name != "ifb-dns" && $interface_name != "lo" ]]; then
+      interface_array+=("$interface_name")
+    fi
+  done
+
+  PS3="Select base_device_name: "
+  select b in "${interface_array[@]}"
+  do
+    case $b in
+      *)
+        echo "$b Selected"
+        break
+        ;;
+    esac
+  done
+
+  read -p "Insert vlan_id (must be between 1 and 4096): " -r c
+  while ! [[ "$c" =~ ^[0-9]+$ ]] || (( c < 1 || c > 4096 )); do
+    echo "vlan_id not valid. Must be between 1 and 4096."
+    read -p "Insert vlan_id: " -r c
+  done
+
+  j='{"vlan_type": "'"$a"'", "base_device_name": "'"$b"'", "vlan_id": "'"$c"'"}'
+  echo "$j" | python /usr/libexec/rpcd/ns.devices call create-vlan-device
+
+  echo "$j"
+}
+
+# Function used to delete a device (vlan)
+function deleteDevice {
+  echo
+  echo "Delete Device"		
+  echo
+
+  selected_device=$(selectDevice)
+
+  j='{"action": "delete-device", "device_name": "'"$selected_device"'"}'
+  echo "$j"
+  echo "$j" | python /usr/libexec/rpcd/ns.devices call delete-device
+}
+
+# Function needed to unconfigure devices removing interface from them
+function unconfigureDevice {
+  echo
+  echo "Unconfigure Device"		
+  echo "Here you have to chose the interfaces linked to the device"
+  echo "After all the interfaces of a certain device will be deleted"
+  echo "The Device is to consider unconfigured"
+  echo
+
+  selected_interface=$(selectInterface) 
+
+  j='{"iface_name": "'"$selected_interface"'"}'
+  echo "$j"
+  echo "$j" | python /usr/libexec/rpcd/ns.devices call unconfigure-device
+}
+
+# Function Bridge configuration
+function bridgeConf() {
+  function listZones {
+    data=$(/usr/libexec/rpcd/ns.devices call list-zones-for-device-config)
+    zones_names=$(echo "$data" | jq -r '.zones[] | .name')
+
+    echo "$zones_names"
+  }
+
+  function selectZone {
+
+    zones_names=$(listZones)
+
+    if [ -z "$zones_names" ]; then
+      echo "Zone not found."
+    else
+      zone_array=()
+      for zone_name in $zones_names; do
+        zone_array+=("$zone_name")
+      done
+
+      PS3="Select zone name: "
+
+      select selected_zone in "${zone_array[@]}"; do
+        if [ -n "$selected_zone" ]; then
+          echo "$selected_zone"
+          break
+        else
+          echo "Invalid selection. Try again"
+        fi
+      done
+    fi
+  }
+
+  selectedZone=$(selectZone)
+  
+  read -p "Insert name of the logical inteface: " -r interface_name
+  echo
+
+  echo "Protocol: "
+  echo "1) static"
+  echo "2) dhcp"
+  echo "3) dhcpv6"
+  echo
+  read -p "Enter an option: " -r OPCODE
+  echo
+
+  case ${OPCODE} in
     1)
-      vlanCreation
-      toContinue
-      clear
+      protocol="static"
+      ;;
+    2)
+      protocol="dhcp"
+      ;;
+    3)
+      protocol="dhcpv6"
+      ;;
+    *)
+      echo "Invalid option"
+      ;;
+  esac
+  echo "$protocol"
+  echo
+
+  ipv6="false"
+
+  if [ "$protocol" == "static" ]; then
+    echo "IP address with CIDR annotation"
+    read -p "Insert: " -r IP
+    # echo "Do you want to enable ipv6?"
+    # read -p "[y/N]" -r response
+    # case $response in
+    #   [Yy]* ) ipv6="true";;
+    #   [Nn]* ) ipv6="false";;
+    #   * ) echo "Invalid response.";;
+    # esac
+    # if [ "$ipv6" == "true" ]; then
+    #   read -p "Insert IPv6 address: " -r IP6
+    # fi
+  elif [[ "$protocol" == "dhcp" ]]; then
+    echo "$protocol"
+    echo
+    echo "Hostname to send when requesting DHCP"
+    echo 
+    echo "1) Send the hostname of this device"
+    echo "2) Do not send a hostname"
+    echo "3) Send a a custom hostname"
+    read -p "Enter an option: " -r OPCODE
+    echo
+
+    case ${OPCODE} in
+      1)
+        dhcp_hostname_to_send="deviceHostname"
+        ;;
+      2)
+        dhcp_hostname_to_send="doNotSendHostname"
+        ;;
+      3)
+        dhcp_hostname_to_send="customHostname"
+        read -p "Insert the custom hostname" -r custom_hostname
+        ;;
+      *)
+        echo "Invalid option"
+        ;;
+    esac
+
+  elif [[ "$protocol" == "dhcpv6" ]]; then
+    echo "$protocol"
+  else
+    echo "Protocollo non valido."
+  fi
+
+  echo '{ 
+  "device_name":"", 
+  "device_type":"logical",
+  "interface_name":"'"$interface_name"'",
+  "protocol":"'"$protocol"'",
+  "zone":"'"$selectedZone"'",
+  "logical_type":"'"$1"'",
+  "interface_to_edit":"",
+  "ip4_address":"'"$IP"'",
+  "ip4_gateway":"",
+  "ip4_mtu":"",
+  "ip6_enabled":"'"$ipv6"'",
+  "ip6_address":"",
+  "ip6_gateway":"",
+  "ip6_mtu":"",
+  "attached_devices":["'"$2"'"],
+  "bonding_policy":"",
+  "bond_primary_device":"",
+  "pppoe_username":"",
+  "pppoe_password":"",
+  "dhcp_client_id":"",
+  "dhcp_client_id":"",
+  "dhcp_hostname_to_send":"'"$dhcp_hostname_to_send"'",
+  "dhcp_custom_hostname":"'"$custom_hostname"'"
+}' | jq . | /usr/libexec/rpcd/ns.devices call configure-device
+} 
+
+# Function bond configuratio
+function bondConf {
+
+  conf='{}'
+
+  echo "$conf"
+}
+
+
+# Function needed to configure a device, creating an interface on them
+function configureDevice {
+  echo
+  echo "Configure Device"
+  echo
+
+  echo 
+  echo "Choose the logical type: "
+  echo "1) bridge 2) bond"
+  read -p "Enter an option: " -r logt
+
+  echo "Select the device to configure"
+  selectedDevice=$(selectDevice)
+  echo
+
+  case $logt in
+    1)
+      logical_type="bridge"
+      bridgeConf "$logical_type" "$selectedDevice"
       ;;
 
     2)
-      deleteDevice
-      toContinue
-      clear
-      ;;
-
-    3)
-      listDevices
-      toContinue
-      clear
-      ;;
-
-    4)
-      listInterfaces
-      toContinue
-      clear
-      ;;
-
-    5)
-      configureDevice
-      toContinue
-      clear
-      ;;
-
-    6)
-      unconfigureDevice
-      toContinue
-      clear
-      ;;
-
-    7)
-      uci changes
-      toContinue
-      clear
-      ;;
-
-    8)
-      uci commit 
-      toContinue
-      clear
-      ;;
-
-    0)
-      condition="false"
+      logical_type="bond"
+      bondConf "$logical_type" "$selectedDevice"
       ;;
 
     *)
-      echo "Invalid Option"
-      clear
+      echo "Invalid option"
+      echo
       ;;
   esac
-done
+
+}
+
+# Function for the Interfaces and devices menu
+function iad {
+
+  condition="true"
+
+  while $condition; do
+
+    echo " --- Interfaces and Devices --- "
+    echo " Remember to commit for the changes to take effect"
+    echo " 0) Back to Main Menu"
+    echo " 1) Create vlan device   5) Configure device"
+    echo " 2) Delete vlan device   6) Unconfigure device"
+    echo " 3) List devices         7) Uci Changes"    
+    echo " 4) List interfaces      8) Uci Commit"
+    echo
+    read -p "Choose an option: " -r response
+    case $response in
+      1)
+        vlanCreation
+        toContinue
+        clear
+        ;;
+
+      2)
+        deleteDevice
+        toContinue
+        clear
+        ;;
+
+      3)
+        listDevices
+        toContinue
+        clear
+        ;;
+
+      4)
+        listInterfaces
+        toContinue
+        clear
+        ;;
+
+      5)
+        configureDevice
+        toContinue
+        clear
+        ;;
+
+      6)
+        unconfigureDevice
+        toContinue
+        clear
+        ;;
+
+      7)
+        uci changes
+        toContinue
+        clear
+        ;;
+
+      8)
+        uci commit 
+        toContinue
+        clear
+        ;;
+
+      0)
+        condition="false"
+        ;;
+
+      *)
+        echo "Invalid Option"
+        clear
+        ;;
+    esac
+  done
 }
 
 function menu {
@@ -468,6 +674,7 @@ function menu {
         clear
         ;;
       *)
+        echo "Invalid option"
         clear
         ;;
     esac
