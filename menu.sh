@@ -357,9 +357,6 @@ function bridgeConf() {
 
   selectedZone=$(selectZone)
   
-  read -p "Insert name of the logical inteface: " -r interface_name
-  echo
-
   echo "Protocol: "
   echo "1) static"
   echo "2) dhcp"
@@ -436,7 +433,7 @@ function bridgeConf() {
   echo '{ 
   "device_name":"", 
   "device_type":"logical",
-  "interface_name":"'"$interface_name"'",
+  "interface_name":"'"$3"'",
   "protocol":"'"$protocol"'",
   "zone":"'"$selectedZone"'",
   "logical_type":"'"$1"'",
@@ -460,12 +457,83 @@ function bridgeConf() {
 }' | jq . | /usr/libexec/rpcd/ns.devices call configure-device
 } 
 
-# Function bond configuratio
+# Function bond configuration
 function bondConf {
 
-  conf='{}'
+  bondPrimaryDevice=$(selectDevice)
 
-  echo "$conf"
+  ipv6="false"
+  protocol="static"
+
+  echo "Choose the bondin policy"
+  echo 
+  echo "1) Round-robin    5) 802.3ad Dynamic ling aggregation"
+  echo "2) Active-backup  6) Adaptive transmit load balancing"
+  echo "3) XOR            7) Adaptive load balancing"
+  echo "4) Broadcast"
+  read -p "Enter an option: " -r OPCODE
+  echo
+
+  case ${OPCODE} in
+    1)
+      bondingPolicy="balance-rr"
+      ;;
+    2)
+      bondingPolicy="active-backup"
+      ;;
+    3)
+      bondingPolicy="balance-xor"
+      ;;
+
+    4)
+      bondingPolicy="broadcast"
+      ;;
+
+    5)
+      bondingPolicy="802.3ad"
+      ;;
+
+    6)
+      bondingPolicy="balance-tlb"
+      ;;
+
+    7)
+      bondingPolicy="balance-alb"
+      ;;
+
+    *)
+      echo "Invalid option"
+      ;;
+  esac
+
+  echo "IP address with CIDR annotation"
+  read -p "Insert: " -r IP
+
+  echo '{
+  "device_name":"", 
+  "device_type":"logical",
+  "interface_name":"'"$3"'",
+  "protocol":"'"$protocol"'",
+  "zone":"",
+  "logical_type":"'"$1"'",
+  "interface_to_edit":"",
+  "ip4_address":"'"$IP"'",
+  "ip4_gateway":"",
+  "ip4_mtu":"",
+  "ip6_enabled":"'"$ipv6"'",
+  "ip6_address":"",
+  "ip6_gateway":"",
+  "ip6_mtu":"",
+  "attached_devices":["'"$2"'"],
+  "bonding_policy":"'"$bondingPolicy"'",
+  "bond_primary_device":"'"$bondPrimaryDevice"'",
+  "pppoe_username":"",
+  "pppoe_password":"",
+  "dhcp_client_id":"",
+  "dhcp_client_id":"",
+  "dhcp_hostname_to_send":"'"$dhcp_hostname_to_send"'",
+  "dhcp_custom_hostname":"'"$custom_hostname"'"
+}' | jq . | /usr/libexec/rpcd/ns.devices call configure-device
 }
 
 
@@ -484,15 +552,19 @@ function configureDevice {
   selectedDevice=$(selectDevice)
   echo
 
+  read -p "Insert name of the logical inteface: " -r interface_name
+  echo
+
+
   case $logt in
     1)
       logical_type="bridge"
-      bridgeConf "$logical_type" "$selectedDevice"
+      bridgeConf "$logical_type" "$selectedDevice" "$interface_name"
       ;;
 
     2)
       logical_type="bond"
-      bondConf "$logical_type" "$selectedDevice"
+      bondConf "$logical_type" "$selectedDevice" "$interface_name"
       ;;
 
     *)
